@@ -27,6 +27,7 @@ import dotenv from "dotenv";
 import { connectDB } from "./config/db";
 import authRoutes from "./routes/auth_routes";
 import { errorHandler, notFound } from "./middleware/error_middleware";
+import userRoutes from "./routes/user_routes";
 
 dotenv.config();
 const app = express();
@@ -40,6 +41,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/users", userRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
