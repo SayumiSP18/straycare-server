@@ -1,22 +1,19 @@
 import { Router } from "express";
-import { register, login, refresh, logout } from "../controllers/auth_controller";
-import { authenticate } from "../middleware/auth_middleware";
+import { getMe, login, logout, refresh, register } from "../controllers/auth_controller";
+import { authenticate, authorize } from "../middleware/auth_middleware";
+import { UserRole } from "../models/user_model";
 
 const router = Router();
 
-// Public authentication routes
 router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
+router.get("/me", authenticate, getMe);
 
-// Example of a protected route using your authenticate middleware
-router.get("/me", authenticate, (req: any, res: any) => {
-  res.status(200).json({
-    success: true,
-    message: "Authenticated successfully",
-    user: req.user, // Contains the token payload (id, role)
-  });
+// TEMPORARY: only for testing role-based access, delete it later
+router.get("/admin-test", authenticate, authorize(UserRole.ADMIN), (_req, res) => {
+  res.status(200).json({ success: true, message: "Admin access granted" });
 });
 
 export default router;

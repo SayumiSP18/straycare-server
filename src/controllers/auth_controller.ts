@@ -204,3 +204,17 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ success: false, message: "Logout failed" });
   }
 };
+
+export const getMe = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ success: false, message: "User not found" });
+      return;
+    }
+    res.status(200).json({ success: true, message: "Profile fetched", data: publicUser(user) });
+  } catch (error) {
+    console.error("GetMe error:", error);
+    res.status(500).json({ success: false, message: "Could not fetch profile" });
+  }
+};
