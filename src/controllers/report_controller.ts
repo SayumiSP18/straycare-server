@@ -7,8 +7,8 @@ import {
   Report,
   ReportStatus,
   Species,
-} from "../models/report.model";
-import { UserRole } from "../models/user.model";
+} from "../models/report_model";
+import { UserRole } from "../models/user_model";
 import { TokenPayload } from "../utils/jwt";
 
 const createSchema = z.object({
