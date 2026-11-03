@@ -30,6 +30,8 @@ import authRoutes from "./routes/auth_routes";
 import { errorHandler, notFound } from "./middleware/error_middleware";
 import userRoutes from "./routes/user_routes";
 import reportRoutes from "./routes/report_routes";
+import animalRoutes from "./routes/animal_routes";
+import adoptionRoutes from "./routes/adoption_routes";
 
 dotenv.config();
 const app = express();
@@ -45,6 +47,8 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/reports", reportRoutes);
+app.use("/api/v1/animals", animalRoutes);
+app.use("/api/v1/adoptions", adoptionRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
