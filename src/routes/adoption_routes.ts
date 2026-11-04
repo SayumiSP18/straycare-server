@@ -5,6 +5,7 @@ import {
   decideAdoption,
   getAdoptionById,
   getAdoptions,
+  downloadCertificate,
 } from "../controllers/adoption_controller";
 import { authenticate, authorize } from "../middleware/auth_middleware";
 import { UserRole } from "../models/user_model";
@@ -18,5 +19,6 @@ router.get("/", authorize(UserRole.CITIZEN, UserRole.ADMIN), getAdoptions);
 router.get("/:id", authorize(UserRole.CITIZEN, UserRole.ADMIN), getAdoptionById);
 router.put("/:id/cancel", authorize(UserRole.CITIZEN), cancelAdoption);
 router.put("/:id/decision", authorize(UserRole.ADMIN), decideAdoption);
+router.get("/:id/certificate", authorize(UserRole.CITIZEN, UserRole.ADMIN), downloadCertificate);
 
 export default router;

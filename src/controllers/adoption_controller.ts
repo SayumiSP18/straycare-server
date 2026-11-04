@@ -4,8 +4,10 @@ import { z } from "zod";
 import { AdoptionRequest, AdoptionStatus } from "../models/adoption_model";
 import { Animal, AnimalStatus } from "../models/animal_model";
 import { Report, ReportStatus } from "../models/report_model";
-import { UserRole } from "../models/user_model";
+// import { UserRole } from "../models/user_model";
 import { TokenPayload } from "../utils/jwt";
+import { User, UserRole } from "../models/user_model";
+import { buildCertificate } from "../utils/certificate";
 
 const createSchema = z.object({
   animalId: z.string().min(1, "Animal id is required"),
@@ -252,5 +254,64 @@ export const decideAdoption = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error("DecideAdoption error:", error);
     res.status(500).json({ success: false, message: "Could not save decision" });
+  }
+};
+
+export const downloadCertificate = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = currentUser(req);
+    const id = String(req.params.id);
+    if (!mongoose.isValidObjectId(id)) {
+      res.status(400).json({ success: false, message: "Invalid request id" });
+      return;
+    }
+
+    const request = await AdoptionRequest.findById(id);
+    if (!request) {
+      res.status(404).json({ success: false, message: "Adoption request not found" });
+      return;
+    }
+    if (user.role !== UserRole.ADMIN && request.requester.toString() !== user.id) {
+      res.status(403).json({ success: false, message: "You can only download your own certificate" });
+      return;
+    }
+    if (request.status !== AdoptionStatus.APPROVED) {
+      res.status(400).json({
+        success: false,
+        message: "A certificate is available only for approved adoptions",
+      });
+      return;
+    }
+
+    const [animal, adopter] = await Promise.all([
+      Animal.findById(request.animal),
+      User.findById(request.requester),
+    ]);
+    if (!animal || !adopter) {
+      res.status(404).json({ success: false, message: "Animal or adopter no longer exists" });
+      return;
+    }
+
+    const adoptedOn = request.decidedAt ?? request.updatedAt;
+    const certificateNo = `SC-${adoptedOn.getFullYear()}-${request.id.slice(-6).toUpperCase()}`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="certificate-${certificateNo}.pdf"`);
+
+    buildCertificate(
+      {
+        certificateNo,
+        adopterName: adopter.name,
+        animalName: animal.name,
+        species: animal.species,
+        adoptedOn,
+      },
+      res
+    );
+  } catch (error) {
+    console.error("DownloadCertificate error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: "Could not generate certificate" });
+    }
   }
 };
