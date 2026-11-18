@@ -100,7 +100,7 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=your_admin_password
 ```
 
-> Never commit your real `.env` file. Generate secrets with:
+
 > `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
 
 ## 📡 API Overview
@@ -115,7 +115,7 @@ Base URL: `/api`
 | Animals | `GET/POST /animals`, `PUT/DELETE /animals/:id` | Rescuer / Admin |
 | Adoptions | `GET/POST /adoptions`, `PUT /adoptions/:id` | Citizen / Admin |
 
-> Update this table to match your actual routes.
+
 
 All responses follow a consistent JSON format with proper HTTP status codes (200, 201, 400, 401, 403, 404, 500).
 
@@ -136,7 +136,7 @@ All responses follow a consistent JSON format with proper HTTP status codes (200
 
 ## 📸 Screenshots
 
-> Add screenshots here (e.g. Postman tests, MongoDB Atlas collections, Railway deployment).
+
 
 ![Postman](./screenshots/postman.png)
 ![Railway](./screenshots/railway.png)
