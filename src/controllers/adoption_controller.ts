@@ -88,22 +88,29 @@ export const createAdoption = async (req: Request, res: Response): Promise<void>
       message: message || "Interested in adopting this pet.",
       phone: phone || "Not provided",
     });
+
     if (animal.status === AnimalStatus.AVAILABLE) {
-      animal.status = AnimalStatus.PENDING;
-      await animal.save();
+      await Animal.updateOne(
+        { _id: animal._id, status: AnimalStatus.AVAILABLE },
+        { status: AnimalStatus.PENDING }
+      );
     }
 
     res.status(201).json({ success: true, message: "Adoption request submitted", data: request });
 
     void (async () => {
-      const requester = await User.findById(user.id).select("name email");
-      if (requester?.email) {
-        await sendAdoptionSubmittedEmail({
-          to: requester.email,
-          adopterName: requester.name || "Adopter",
-          animalName: animal.name,
-          requestId: String(request._id),
-        });
+      try {
+        const requester = await User.findById(user.id).select("name email");
+        if (requester?.email) {
+          await sendAdoptionSubmittedEmail({
+            to: requester.email,
+            adopterName: requester.name || "Adopter",
+            animalName: animal.name,
+            requestId: String(request._id),
+          });
+        }
+      } catch (mailErr) {
+        console.error("Failed to trigger adoption submitted email:", mailErr);
       }
     })();
   } catch (error) {
@@ -256,9 +263,10 @@ export const decideAdoption = async (req: Request, res: Response): Promise<void>
       otherPendingRequesters = otherPending.map((r) => r.requester);
 
       await request.save();
-      animal.status = AnimalStatus.ADOPTED;
-      animal.adoptedBy = request.requester;
-      await animal.save();
+      await Animal.updateOne(
+        { _id: animal._id },
+        { status: AnimalStatus.ADOPTED, adoptedBy: request.requester }
+      );
       await Report.updateOne({ _id: animal.report }, { status: ReportStatus.ADOPTED });
       // Everyone else waiting for this animal is rejected
       await AdoptionRequest.updateMany(
@@ -273,32 +281,36 @@ export const decideAdoption = async (req: Request, res: Response): Promise<void>
     res.status(200).json({ success: true, message: `Request ${request.status.toLowerCase()}`, data: request });
 
     void (async () => {
-      const requester = await User.findById(request.requester).select("name email");
-      if (requester?.email) {
-        await sendAdoptionDecisionEmail({
-          to: requester.email,
-          adopterName: requester.name || "Adopter",
-          animalName: animal.name,
-          decision: parsed.data.decision,
-          requestId: String(request._id),
-        });
-      }
+      try {
+        const requester = await User.findById(request.requester).select("name email");
+        if (requester?.email) {
+          await sendAdoptionDecisionEmail({
+            to: requester.email,
+            adopterName: requester.name || "Adopter",
+            animalName: animal.name,
+            decision: parsed.data.decision,
+            requestId: String(request._id),
+          });
+        }
 
-      if (otherPendingRequesters.length > 0) {
-        const otherUsers = await User.find({ _id: { $in: otherPendingRequesters } }).select("name email");
-        await Promise.all(
-          otherUsers
-            .filter((u) => Boolean(u.email))
-            .map((u) =>
-              sendAdoptionDecisionEmail({
-                to: u.email,
-                adopterName: u.name || "Adopter",
-                animalName: animal.name,
-                decision: "REJECTED",
-                requestId: String(request._id),
-              })
-            )
-        );
+        if (otherPendingRequesters.length > 0) {
+          const otherUsers = await User.find({ _id: { $in: otherPendingRequesters } }).select("name email");
+          await Promise.all(
+            otherUsers
+              .filter((u) => Boolean(u.email))
+              .map((u) =>
+                sendAdoptionDecisionEmail({
+                  to: u.email,
+                  adopterName: u.name || "Adopter",
+                  animalName: animal.name,
+                  decision: "REJECTED",
+                  requestId: String(request._id),
+                })
+              )
+          );
+        }
+      } catch (mailErr) {
+        console.error("Failed to trigger adoption decision email:", mailErr);
       }
     })();
   } catch (error) {

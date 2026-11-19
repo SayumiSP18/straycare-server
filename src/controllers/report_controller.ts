@@ -44,12 +44,15 @@ const getUploadedImageUrl = (req: Request): string | undefined => {
   if (customReq.file.path && customReq.file.path.startsWith("http")) {
     return customReq.file.path;
   }
-  return `${req.protocol}://${req.get("host")}/uploads/${customReq.file.filename}`;
+  const protocol = req.headers["x-forwarded-proto"]
+    ? String(req.headers["x-forwarded-proto"]).split(",")[0].trim()
+    : req.protocol;
+  return `${protocol}://${req.get("host")}/uploads/${customReq.file.filename}`;
 };
 
 export const createReport = async (req: Request, res: Response): Promise<void> => {
   try {
-    const parsed = createSchema.safeParse(req.body);
+    const parsed = createSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       validationError(res, parsed.error);
       return;
@@ -163,7 +166,7 @@ export const updateReport = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const parsed = updateSchema.safeParse(req.body);
+    const parsed = updateSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       validationError(res, parsed.error);
       return;
@@ -193,7 +196,7 @@ export const updateReportStatus = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const parsed = statusSchema.safeParse(req.body);
+    const parsed = statusSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       validationError(res, parsed.error);
       return;
@@ -229,9 +232,9 @@ export const updateReportStatus = async (req: Request, res: Response): Promise<v
     if (newStatus === ReportStatus.RESCUED || newStatus === ReportStatus.IN_CARE) {
       report.assignedTo = new mongoose.Types.ObjectId(user.id);
 
-      const existingAnimal = await Animal.findOne({ 
-        location: report.location, 
-        species: report.species 
+      const existingAnimal = await Animal.findOne({
+        location: report.location,
+        species: report.species,
       } as any);
 
       if (!existingAnimal) {
