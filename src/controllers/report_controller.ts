@@ -8,6 +8,7 @@ import {
   ReportStatus,
   Species,
 } from "../models/report_model";
+import { Animal } from "../models/animal_model";
 import { UserRole } from "../models/user_model";
 import { TokenPayload } from "../utils/jwt";
 
@@ -20,7 +21,7 @@ const createSchema = z.object({
 });
 const updateSchema = createSchema.partial();
 const statusSchema = z.object({
-  status: z.enum([ReportStatus.RESCUED, ReportStatus.IN_CARE]),
+  status: z.enum([ReportStatus.REPORTED, ReportStatus.IN_CARE, ReportStatus.RESCUED]),
 });
 
 const currentUser = (req: Request): TokenPayload => req.user as TokenPayload;
@@ -37,6 +38,15 @@ const validationError = (res: Response, error: z.ZodError): void => {
   });
 };
 
+const getUploadedImageUrl = (req: Request): string | undefined => {
+  const customReq = req as any;
+  if (!customReq.file) return undefined;
+  if (customReq.file.path && customReq.file.path.startsWith("http")) {
+    return customReq.file.path;
+  }
+  return `${req.protocol}://${req.get("host")}/uploads/${customReq.file.filename}`;
+};
+
 export const createReport = async (req: Request, res: Response): Promise<void> => {
   try {
     const parsed = createSchema.safeParse(req.body);
@@ -44,7 +54,16 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
       validationError(res, parsed.error);
       return;
     }
-    const report = await Report.create({ ...parsed.data, reporter: currentUser(req).id });
+
+    const uploadedUrl = getUploadedImageUrl(req);
+    const imageUrl = uploadedUrl ?? parsed.data.imageUrl;
+
+    const report = await Report.create({
+      ...parsed.data,
+      ...(imageUrl ? { imageUrl } : {}),
+      reporter: currentUser(req).id,
+    });
+
     res.status(201).json({ success: true, message: "Report created", data: report });
   } catch (error) {
     console.error("CreateReport error:", error);
@@ -54,13 +73,7 @@ export const createReport = async (req: Request, res: Response): Promise<void> =
 
 export const getReports = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = currentUser(req);
-    const page = Math.max(parseInt(String(req.query.page ?? "1"), 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1), 50);
-
     const filter: Record<string, unknown> = {};
-    // Citizens only ever see their own reports
-    if (user.role === UserRole.CITIZEN) filter.reporter = user.id;
 
     const { status, species, condition } = req.query;
     if (typeof status === "string" && Object.values(ReportStatus).includes(status as ReportStatus)) {
@@ -75,6 +88,9 @@ export const getReports = async (req: Request, res: Response): Promise<void> => 
     ) {
       filter.condition = condition;
     }
+
+    const page = Math.max(parseInt(String(req.query.page ?? "1"), 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1), 50);
 
     const [reports, total] = await Promise.all([
       Report.find(filter)
@@ -99,7 +115,6 @@ export const getReports = async (req: Request, res: Response): Promise<void> => 
 
 export const getReportById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = currentUser(req);
     const id = String(req.params.id);
     if (!mongoose.isValidObjectId(id)) {
       res.status(400).json({ success: false, message: "Invalid report id" });
@@ -109,10 +124,6 @@ export const getReportById = async (req: Request, res: Response): Promise<void> 
     const report = await Report.findById(id);
     if (!report) {
       res.status(404).json({ success: false, message: "Report not found" });
-      return;
-    }
-    if (user.role === UserRole.CITIZEN && report.reporter.toString() !== user.id) {
-      res.status(403).json({ success: false, message: "You can only view your own reports" });
       return;
     }
 
@@ -158,8 +169,14 @@ export const updateReport = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    Object.assign(report, parsed.data);
+    const uploadedUrl = getUploadedImageUrl(req);
+
+    Object.assign(report, {
+      ...parsed.data,
+      ...(uploadedUrl ? { imageUrl: uploadedUrl } : {}),
+    });
     await report.save();
+
     res.status(200).json({ success: true, message: "Report updated", data: report });
   } catch (error) {
     console.error("UpdateReport error:", error);
@@ -197,7 +214,6 @@ export const updateReportStatus = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Once a rescuer has taken a report, only that rescuer (or an admin) can continue it
     if (
       report.assignedTo &&
       report.assignedTo.toString() !== user.id &&
@@ -210,9 +226,36 @@ export const updateReportStatus = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    if (newStatus === ReportStatus.RESCUED) {
+    if (newStatus === ReportStatus.RESCUED || newStatus === ReportStatus.IN_CARE) {
       report.assignedTo = new mongoose.Types.ObjectId(user.id);
+
+      const existingAnimal = await Animal.findOne({ 
+        location: report.location, 
+        species: report.species 
+      } as any);
+
+      if (!existingAnimal) {
+        try {
+          await Animal.create({
+            name: `Rescued ${report.species.toLowerCase()}`,
+            species: report.species,
+            breed: "Rescue Mix",
+            ageMonths: 12,
+            gender: "UNKNOWN",
+            vaccinated: true,
+            neutered: false,
+            story: report.description || "Rescued from the streets and looking for a safe home.",
+            location: report.location,
+            status: "AVAILABLE",
+            photos: report.imageUrl ? [report.imageUrl] : [],
+            rescuer: new mongoose.Types.ObjectId(user.id),
+          } as any);
+        } catch (animalErr) {
+          console.error("Failed to auto-create public animal record:", animalErr);
+        }
+      }
     }
+
     report.status = newStatus;
     await report.save();
 

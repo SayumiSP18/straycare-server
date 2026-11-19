@@ -4,19 +4,18 @@ import { z } from "zod";
 import { AdoptionRequest, AdoptionStatus } from "../models/adoption_model";
 import { Animal, AnimalStatus } from "../models/animal_model";
 import { Report, ReportStatus } from "../models/report_model";
-// import { UserRole } from "../models/user_model";
 import { TokenPayload } from "../utils/jwt";
 import { User, UserRole } from "../models/user_model";
 import { buildCertificate } from "../utils/certificate";
+import {
+  sendAdoptionSubmittedEmail,
+  sendAdoptionDecisionEmail,
+} from "../utils/mailer";
 
 const createSchema = z.object({
   animalId: z.string().min(1, "Animal id is required"),
-  message: z
-    .string()
-    .trim()
-    .min(10, "Please tell us about yourself (at least 10 characters)")
-    .max(1000),
-  phone: z.string().trim().regex(/^[0-9+\-\s()]{7,20}$/, "Please provide a valid phone number"),
+  message: z.string().trim().max(1000).optional(),
+  phone: z.string().trim().optional(),
 });
 const decisionSchema = z.object({
   decision: z.enum([AdoptionStatus.APPROVED, AdoptionStatus.REJECTED]),
@@ -86,14 +85,27 @@ export const createAdoption = async (req: Request, res: Response): Promise<void>
     const request = await AdoptionRequest.create({
       animal: animal._id,
       requester: user.id,
-      message,
-      phone,
+      message: message || "Interested in adopting this pet.",
+      phone: phone || "Not provided",
     });
     if (animal.status === AnimalStatus.AVAILABLE) {
       animal.status = AnimalStatus.PENDING;
       await animal.save();
     }
+
     res.status(201).json({ success: true, message: "Adoption request submitted", data: request });
+
+    void (async () => {
+      const requester = await User.findById(user.id).select("name email");
+      if (requester?.email) {
+        await sendAdoptionSubmittedEmail({
+          to: requester.email,
+          adopterName: requester.name || "Adopter",
+          animalName: animal.name,
+          requestId: String(request._id),
+        });
+      }
+    })();
   } catch (error) {
     // Duplicate key from the partial unique index (two clicks at once)
     if ((error as { code?: number }).code === 11000) {
@@ -230,11 +242,19 @@ export const decideAdoption = async (req: Request, res: Response): Promise<void>
     request.decidedBy = adminId;
     request.decidedAt = new Date();
 
+    let otherPendingRequesters: Types.ObjectId[] = [];
+
     if (parsed.data.decision === AdoptionStatus.APPROVED) {
       if (animal.status === AnimalStatus.ADOPTED) {
         res.status(400).json({ success: false, message: "This animal has already been adopted" });
         return;
       }
+      const otherPending = await AdoptionRequest.find(
+        { animal: animal._id, _id: { $ne: request._id }, status: AdoptionStatus.PENDING },
+        { requester: 1 }
+      );
+      otherPendingRequesters = otherPending.map((r) => r.requester);
+
       await request.save();
       animal.status = AnimalStatus.ADOPTED;
       animal.adoptedBy = request.requester;
@@ -251,6 +271,36 @@ export const decideAdoption = async (req: Request, res: Response): Promise<void>
     }
 
     res.status(200).json({ success: true, message: `Request ${request.status.toLowerCase()}`, data: request });
+
+    void (async () => {
+      const requester = await User.findById(request.requester).select("name email");
+      if (requester?.email) {
+        await sendAdoptionDecisionEmail({
+          to: requester.email,
+          adopterName: requester.name || "Adopter",
+          animalName: animal.name,
+          decision: parsed.data.decision,
+          requestId: String(request._id),
+        });
+      }
+
+      if (otherPendingRequesters.length > 0) {
+        const otherUsers = await User.find({ _id: { $in: otherPendingRequesters } }).select("name email");
+        await Promise.all(
+          otherUsers
+            .filter((u) => Boolean(u.email))
+            .map((u) =>
+              sendAdoptionDecisionEmail({
+                to: u.email,
+                adopterName: u.name || "Adopter",
+                animalName: animal.name,
+                decision: "REJECTED",
+                requestId: String(request._id),
+              })
+            )
+        );
+      }
+    })();
   } catch (error) {
     console.error("DecideAdoption error:", error);
     res.status(500).json({ success: false, message: "Could not save decision" });

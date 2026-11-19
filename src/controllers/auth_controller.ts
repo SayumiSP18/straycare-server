@@ -2,6 +2,7 @@ import { CookieOptions, Request, Response } from "express";
 import { z } from "zod";
 import { User, UserRole } from "../models/user_model";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt";
+import { sendWelcomeEmail } from "../utils/mailer";
 
 const registerSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(60),
@@ -71,6 +72,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         ? "Registration successful"
         : "Registration successful. Your rescuer account is waiting for admin approval.",
       data: publicUser(user),
+    });
+
+    void sendWelcomeEmail({
+      to: user.email,
+      name: user.name,
+      role: user.role,
     });
   } catch (error) {
     console.error("Register error:", error);
