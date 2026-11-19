@@ -89,15 +89,31 @@ Create a `.env` file in the project root:
 
 ```env
 PORT=5000
-NODE_ENV=development
-MONGO_URI=your_mongodb_atlas_connection_string
-JWT_SECRET=your_access_token_secret
-JWT_REFRESH_SECRET=your_refresh_token_secret
+
+NODE_ENV=$$$
+
+MONGO_URI=$$$
+
+JWT_SECRET=its_a_secret
+JWT_REFRESH_SECRET=secret_should_be_a_secret
+
 JWT_ACCESS_EXPIRES=15m
 JWT_REFRESH_EXPIRES=7d
+
 CLIENT_URL=http://localhost:5173
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+CLIENT_URL_VERCEL=https://straycare-client.vercel.app
+
+SERVER_URL=http://localhost:5000
+SERVER_RAILWAY_URL=straycare-server-production.up.railway.app
+
+ADMIN_EMAIL=guesswhat@youwillneverknow.com
+ADMIN_PASSWORD=guessifucan
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=guesswhat@youwillneverknow.com
+SMTP_PASS=guessifucan
+EMAIL_FROM="StrayCare guesswhat@youwillneverknow.com"
 ```
 
 
@@ -136,10 +152,17 @@ All responses follow a consistent JSON format with proper HTTP status codes (200
 
 ## 📸 Screenshots
 
+### Railway backend deployment
+![Railway backend deployment](./docs/screenshots/screenshot1.png)
 
+### Vercel frontend deployment
+![Vercel frontend deployment](./docs/screenshots/screenshot2.png)
 
-![Postman](./screenshots/postman.png)
-![Railway](./screenshots/railway.png)
+### MongoDB Atlas database deployment
+![MongoDB Atlas database deployment](./docs/screenshots/screenshot3.png)
+
+### API testing - thunder client
+![API testing - thunder client](./docs/screenshots/screenshot5.png)
 
 ## 👩‍💻 Author
 
