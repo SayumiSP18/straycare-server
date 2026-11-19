@@ -22,6 +22,19 @@ const getAiClient = (): GoogleGenAI | null => {
   return new GoogleGenAI({ apiKey });
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableAiError = (err: unknown): boolean => {
+  const text = JSON.stringify(err ?? "").toLowerCase();
+  return (
+    text.includes("503") ||
+    text.includes("unavailable") ||
+    text.includes("high demand") ||
+    text.includes("429") ||
+    text.includes("resource_exhausted")
+  );
+};
+
 export const chatWithBot = async (req: Request, res: Response): Promise<void> => {
   try {
     const parsed = chatSchema.safeParse(req.body ?? {});
@@ -49,7 +62,7 @@ export const chatWithBot = async (req: Request, res: Response): Promise<void> =>
       .limit(15)
       .lean();
 
-   const petSummary =
+    const petSummary =
       animals.length > 0
         ? animals
             .map((a) => {
@@ -89,24 +102,51 @@ Keep answers clear, friendly, concise, and helpful.
       { role: "user", parts: [{ text: parsed.data.message }] },
     ];
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: {
-        systemInstruction,
-        temperature: 0.5,
-      },
-    });
+    const primaryModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+    const modelsToTry = [primaryModel, "gemini-2.5-flash"];
 
-    const reply = response.text?.trim() || "Sorry, I couldn't generate a response right now.";
+    let responseText = "";
+    let lastError: unknown;
+
+    for (const model of modelsToTry) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents,
+            config: {
+              systemInstruction,
+            },
+          });
+          responseText = response.text?.trim() || "";
+          if (responseText) break;
+        } catch (err) {
+          lastError = err;
+          if (isRetryableAiError(err) && attempt === 0) {
+            await sleep(700);
+            continue;
+          }
+          break;
+        }
+      }
+      if (responseText) break;
+    }
+
+    if (!responseText) {
+      throw lastError ?? new Error("Empty response from AI model");
+    }
 
     res.status(200).json({
       success: true,
       message: "AI reply generated",
-      data: { reply },
+      data: { reply: responseText },
     });
   } catch (error) {
     console.error("ChatWithBot error:", error);
-    res.status(500).json({ success: false, message: "Could not process AI request" });
+    const statusCode = isRetryableAiError(error) ? 503 : 500;
+    const msg = isRetryableAiError(error)
+      ? "The AI service is busy right now. Please try again in a moment."
+      : "Could not process AI request";
+    res.status(statusCode).json({ success: false, message: msg });
   }
 };
